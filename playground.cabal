@@ -1,0 +1,48 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.33.0.
+--
+-- see: https://github.com/sol/hpack
+--
+-- hash: 2519889bf4ff9f4804648b92186c45f4ec27af804c32b2c9d52c4d7dde694ef1
+
+name:           playground
+version:        0.0.1
+synopsis:       Coding playground for Haskell-based experiments
+description:    Coding playground for Haskell-based experiments
+category:       Compilers, Logic Programming
+homepage:       https://github.com/luc-tielen/playground#README.md
+bug-reports:    https://github.com/luc-tielen/playground/issues
+author:         Luc Tielen
+maintainer:     luc.tielen@gmail.com
+copyright:      2021 Luc Tielen
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    LICENSE
+
+source-repository head
+  type: git
+  location: https://github.com/luc-tielen/playground
+
+executable playground
+  main-is: Main.hs
+  other-modules:
+      Paths_playground
+  hs-source-dirs:
+      src
+  default-extensions: OverloadedStrings LambdaCase ScopedTypeVariables
+  ghc-options: -Wall -Weverything -Wno-safe -Wno-unsafe -Wno-implicit-prelude -Wno-missed-specializations -Wno-all-missed-specializations -Wno-missing-import-lists -Wno-type-defaults -Wno-missing-local-signatures -Wno-monomorphism-restriction -Wno-missing-deriving-strategies -Wno-prepositive-qualified-module -Wno-missing-safe-haskell-mode -optP-Wno-nonportable-include-path -fhide-source-paths -fno-show-valid-hole-fits -fno-sort-valid-hole-fits
+  cxx-options: -std=c++17 -Wall -D__EMBEDDED_SOUFFLE__
+  build-depends:
+      base >=4.12 && <5
+    , containers >=0.6.2.1 && <1
+    , mtl >=2.0 && <3
+    , recursion-schemes
+    , text >=1.0 && <2
+  if os(linux)
+    extra-libraries:
+        stdc++
+  default-language: Haskell2010
