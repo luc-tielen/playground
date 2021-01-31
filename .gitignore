@@ -1,0 +1,12 @@
+dist/
+dist-newstyle/
+dist-docs*/
+cabal.project.local
+cabal.project.local~
+.ghc.*
+result
+result-*
+.history
+cbits/*.o
+upload-docs.sh
+*.csv
