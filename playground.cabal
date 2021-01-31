@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 2519889bf4ff9f4804648b92186c45f4ec27af804c32b2c9d52c4d7dde694ef1
+-- hash: 306d92dafee60f2c4906f50cb7008a98a5e258ee7fe7202defd172d7790c42b3
 
 name:           playground
 version:        0.0.1
@@ -41,6 +41,7 @@ executable playground
     , containers >=0.6.2.1 && <1
     , mtl >=2.0 && <3
     , recursion-schemes
+    , souffle-haskell
     , text >=1.0 && <2
   if os(linux)
     extra-libraries:

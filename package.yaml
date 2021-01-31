@@ -19,6 +19,7 @@ dependencies:
   - text >= 1.0 && < 2
   - containers >= 0.6.2.1 && < 1
   - recursion-schemes
+  - souffle-haskell
 
 default-extensions:
   - OverloadedStrings
