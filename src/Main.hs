@@ -6,6 +6,7 @@
 
 module Main ( main ) where
 
+import Prelude hiding (succ)
 import qualified Language.Souffle.Interpreted as Souffle
 import Language.Souffle.Experimental hiding (VarName)
 import Data.Foldable
@@ -66,35 +67,30 @@ scenarios =
   ]
 
 
+
 algorithm :: DSL DCE 'Definition ()
 algorithm = do
   Predicate define <- predicateFor @Define
   Predicate use <- predicateFor @Use
+  Predicate succ <- predicateFor @Succ
+  Predicate live <- predicateFor @Live
   Predicate deadCode <- predicateFor @DeadCode
-  Predicate badInstances <- predicateFor @BadInstances
 
-  lineNr <- var "lineNr"
+  lineNr <- var "lineNr1"
   lineNr2 <- var "lineNr2"
-  lineNr3 <- var "lineNr3"
   varName <- var "varName"
 
+  live(lineNr, varName) |- do
+    succ(lineNr, lineNr2)
+    use(lineNr2, varName)
+  live(lineNr, varName) |- do
+    succ(lineNr, lineNr2)
+    live(lineNr2, varName)
+    not' $ define(lineNr2, varName)
+
   deadCode(lineNr) |- do
     define(lineNr, varName)
-    not' $ use(__, varName)
-  deadCode(lineNr) |- do
-    define(lineNr, varName)
-    define(lineNr2, varName)
-    lineNr .< lineNr2
-    not' $ badInstances(lineNr)
-
-  badInstances(lineNr) |- do
-    define(lineNr, varName)
-    use(lineNr3, varName)
-    define(lineNr2, varName)
-    lineNr .< lineNr2
-    lineNr .< lineNr3
-    lineNr3 .< lineNr2
-
+    not' $ live(lineNr, varName)
 
 data DCE = DCE
 
@@ -106,14 +102,17 @@ data Define = Define LineNr VarName
 data Use = Use LineNr VarName
   deriving (Generic, FactMetadata)
 
+data Live = Live LineNr VarName
+  deriving (Generic, FactMetadata, Show)
+
+data Succ = Succ LineNr LineNr
+  deriving (Generic, FactMetadata)
+
 data DeadCode = DeadCode LineNr
   deriving (Generic, Show, FactMetadata)
 
-data BadInstances = BadInstances LineNr
-  deriving (Generic, Show, FactMetadata)
-
 instance Souffle.Program DCE where
-  type ProgramFacts DCE = '[Define, Use, DeadCode, BadInstances]
+  type ProgramFacts DCE = '[Define, Use, Live, DeadCode, Succ]
   programName = const "dce"
 
 instance Souffle.Fact Define where
@@ -124,9 +123,13 @@ instance Souffle.Fact Use where
   type FactDirection Use = 'Souffle.Input
   factName = const "use"
 
-instance Souffle.Fact BadInstances where
-  type FactDirection BadInstances = 'Souffle.Input
-  factName = const "bad_instances"
+instance Souffle.Fact Live where
+  type FactDirection Live = 'Souffle.Internal
+  factName = const "live"
+
+instance Souffle.Fact Succ where
+  type FactDirection Succ = 'Souffle.Input
+  factName = const "succ"
 
 instance Souffle.Fact DeadCode where
   type FactDirection DeadCode = 'Souffle.Output
@@ -135,17 +138,20 @@ instance Souffle.Fact DeadCode where
 instance Souffle.Marshal Define
 instance Souffle.Marshal Use
 instance Souffle.Marshal DeadCode
-instance Souffle.Marshal BadInstances
+instance Souffle.Marshal Live
+instance Souffle.Marshal Succ
 
 dce :: Program -> IO Program
 dce instructions = do
-  renderIO DCE "/tmp/algorithm.dl" algorithm
   runSouffleInterpreted DCE algorithm $ \case
     Nothing -> do
       liftIO $ putStrLn "Failed to load Souffle"
       pure instructions
     Just prog -> do
       let program' = zip [0..] instructions
+          lineNrs = map fst program'
+          successors = uncurry Succ <$> zip lineNrs (drop 1 lineNrs)
+      Souffle.addFacts prog successors
       traverse_ extractFacts program'
       Souffle.run prog
       deadInsts <- Souffle.getFacts prog
