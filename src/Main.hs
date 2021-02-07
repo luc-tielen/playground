@@ -15,81 +15,121 @@ import qualified Data.Map as Map
 import Control.Monad.State
 import GHC.Generics
 import Data.Int
+import Data.Maybe (catMaybes)
 
-type Program = [Instruction]
+
+type Id = Int32
+
+type SupplyT = StateT Id
+
+fresh :: Monad m => SupplyT m Id
+fresh = do
+  current <- get
+  modify (+1)
+  pure current
+
+runSupplyT :: Monad m => Id -> SupplyT m a -> m a
+runSupplyT = flip evalStateT
+
+annotate :: AST () -> SupplyT IO (AST Id)
+annotate = \case
+  Assign _ varName value -> do
+    lineNr <- fresh
+    pure $ Assign lineNr varName value
+  Print _ varName -> do
+    lineNr <- fresh
+    pure $ Print lineNr varName
+  Increment _ varName -> do
+    lineNr <- fresh
+    pure $ Increment lineNr varName
+  Block _ insts -> do
+    lineNr <- fresh
+    Block lineNr <$> traverse annotate insts
 
 type VarName = String
 type Value = Int
 
-data Instruction
-  = Assign VarName Value
-  | Increment VarName
-  | Print VarName
-  deriving Show
+data AST a
+  = Assign a VarName Value
+  | Increment a VarName
+  | Print a VarName
+  | Block a [AST a]
+  deriving (Eq, Show)
+
+assign :: VarName -> Value -> AST ()
+assign = Assign ()
+
+print_ :: VarName -> AST ()
+print_ = Print ()
+
+incr :: VarName -> AST ()
+incr = Increment ()
 
 type Env = Map VarName Value
 
-eval :: Program -> IO ()
-eval instructions = flip evalStateT mempty $ traverse_ go instructions where
-  go :: Instruction -> StateT Env IO ()
+eval :: AST a -> IO ()
+eval stmt = flip evalStateT mempty $ go stmt where
+  go :: AST a -> StateT Env IO ()
   go = \case
-    Assign varName value -> modify (Map.insert varName value)
-    Increment varName -> modify (Map.adjust (+1) varName)
-    Print varName -> do
+    Assign _ varName value -> modify (Map.insert varName value)
+    Increment _ varName -> modify (Map.adjust (+1) varName)
+    Print _ varName -> do
       value <- gets (Map.lookup varName)
       lift $ putStrLn $ show value
+    Block _ insts -> traverse_ go insts
 
-scenarios :: [Program]
-scenarios =
-  [ [ Assign "x" 1
-    , Assign "y" 2  -- This should be deleted (dead code)
-    , Print "x"
+scenarios :: [AST ()]
+scenarios = map (Block ())
+  [ [ assign "x" 1
+    , assign "y" 2  -- This should be deleted (dead code)
+    , print_ "x"
     ]
-  , [ Assign "x" 1
-    , Assign "y" 2
-    , Print "x"
-    , Print "y"
+  , [ assign "x" 1
+    , assign "y" 2
+    , print_ "x"
+    , print_ "y"
     ]
-  , [ Assign "x" 1  -- Should be deleted
-    , Assign "x" 2
-    , Print "x"
+  , [ assign "x" 1  -- Should be deleted
+    , assign "x" 2
+    , print_ "x"
     ]
-  , [ Assign "x" 1  -- Should be deleted
-    , Assign "x" 2  -- Should be deleted
-    , Assign "x" 3
-    , Print "x"
+  , [ assign "x" 1  -- Should be deleted
+    , assign "x" 2  -- Should be deleted
+    , assign "x" 3
+    , print_ "x"
     ]
-  , [ Assign "x" 1
-    , Print "x"
+  , [ assign "x" 1
+    , print_ "x"
 
-    , Assign "x" 2  -- Should be deleted
-    , Assign "x" 3
-    , Print "x"
+    , assign "x" 2  -- Should be deleted
+    , assign "x" 3
+    , print_ "x"
     ]
-  , [ Assign "x" 1
-    , Print "x"
+  , [ assign "x" 1
+    , print_ "x"
 
-    , Assign "y" 4  -- Should be deleted
-    , Assign "x" 2  -- Should be deleted
-    , Assign "x" 3
-    , Print "x"
+    , assign "y" 4  -- Should be deleted
+    , assign "x" 2  -- Should be deleted
+    , assign "x" 3
+    , print_ "x"
     ]
-  , [ Assign "x" 1
-    , Print "x"
+  , [ assign "x" 1
+    , print_ "x"
 
-    , Assign "y" 4
-    , Assign "x" 2  -- Should be deleted
-    , Assign "x" 3
-    , Print "x"
-    , Print "y"
+    , assign "y" 4
+    , assign "x" 2  -- Should be deleted
+    , assign "x" 3
+    , print_ "x"
+    , print_ "y"
     ]
-  , [ Assign "x" 1  -- Should be deleted (but is not? more than 1 iteration needed?)
-    , Increment "x"  -- Should be deleted
-    , Assign "x" 10
-    , Increment "x"
-    , Assign "y" 2  -- Should be deleted
-    , Print "x"
+  , [ assign "x" 1  -- Should be deleted (but is not? more than 1 iteration needed?)
+    , incr "x"  -- Should be deleted
+    , assign "x" 10
+    , incr "x"
+    , assign "y" 2  -- Should be deleted
+    , print_ "x"
     ]
+  , [ assign "x" 1 ]
   ]
 
 
@@ -167,41 +207,62 @@ instance Souffle.Marshal DeadCode
 instance Souffle.Marshal Live
 instance Souffle.Marshal Succ
 
-dce :: Program -> IO Program
-dce instructions = do
+dce :: AST Id -> IO (Maybe (AST Id))
+dce stmt = do
   runSouffleInterpreted DCE algorithm $ \case
     Nothing -> do
       liftIO $ putStrLn "Failed to load Souffle"
-      pure instructions
+      pure $ Just stmt
     Just prog -> do
-      let program' = zip [0..] instructions
-          lineNrs = map fst program'
-          successors = uncurry Succ <$> zip lineNrs (drop 1 lineNrs)
-      Souffle.addFacts prog successors
-      traverse_ (extractFacts prog) program'
+      extractFacts prog stmt
       Souffle.run prog
       deadInsts <- Souffle.getFacts prog
-      pure $ simplify deadInsts program'
+      pure $ simplify deadInsts stmt
 
-extractFacts :: Souffle.Handle DCE -> (LineNr, Instruction) -> Souffle.SouffleM ()
-extractFacts prog (lineNr, inst) = case inst of
-  Assign varName _ ->
+extractFacts :: Souffle.Handle DCE -> AST Id -> Souffle.SouffleM ()
+extractFacts prog = \case
+  Assign lineNr varName _ ->
     Souffle.addFact prog $ Define lineNr varName
-  Increment varName -> do
+  Increment lineNr varName -> do
     Souffle.addFact prog $ Define lineNr varName
     Souffle.addFact prog $ Use lineNr varName
-  Print varName ->
+  Print lineNr varName ->
     Souffle.addFact prog $ Use lineNr varName
+  Block _ insts -> do
+    traverse_ (extractFacts prog) insts
+    let lineNrs = map getId insts
+        successors = uncurry Succ <$> zip lineNrs (drop 1 lineNrs)
+    Souffle.addFacts prog successors
 
-simplify :: [DeadCode] -> [(LineNr, Instruction)] -> Program
-simplify deadInsts =
-  let deadLineNrs = [i | DeadCode i <- deadInsts]
-  in map snd . filter ((`notElem` deadLineNrs) . fst)
+getId :: AST Id -> Id
+getId = \case
+  Assign i _ _ -> i
+  Increment i _ -> i
+  Print i _ -> i
+  Block i _ -> i
+
+simplify :: [DeadCode] -> AST Id -> Maybe (AST Id)
+simplify deadInsts stmt = case stmt of
+  Block nodeId insts ->
+    simplify' stmt $
+      case catMaybes $ simplify deadInsts <$> insts of
+        [] -> Nothing
+        simplifiedInsts -> Just $ Block nodeId simplifiedInsts
+  _ -> simplify' stmt (Just stmt)
+  where deadLineNrs = [i | DeadCode i <- deadInsts]
+        simplify' original modified =
+          let nodeId = getId original
+           in if nodeId `elem` deadLineNrs
+                then Nothing
+                else modified
 
 main :: IO ()
 main = for_ scenarios $ \program -> do
-  optimizedProgram <- dce program
-  print optimizedProgram
-  eval optimizedProgram
-
+  annotated  <- runSupplyT 0 (annotate program)
+  optimizedProgram <- dce annotated
+  case optimizedProgram of
+    Nothing -> print "Optimized away!"
+    Just optimizedProgram' -> do
+      print optimizedProgram'
+      eval optimizedProgram'
 
