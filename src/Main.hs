@@ -23,6 +23,7 @@ type Value = Int
 
 data Instruction
   = Assign VarName Value
+  | Increment VarName
   | Print VarName
   deriving Show
 
@@ -33,6 +34,7 @@ eval instructions = flip evalStateT mempty $ traverse_ go instructions where
   go :: Instruction -> StateT Env IO ()
   go = \case
     Assign varName value -> modify (Map.insert varName value)
+    Increment varName -> modify (Map.adjust (+1) varName)
     Print varName -> do
       value <- gets (Map.lookup varName)
       lift $ putStrLn $ show value
@@ -62,6 +64,30 @@ scenarios =
 
     , Assign "x" 2  -- Should be deleted
     , Assign "x" 3
+    , Print "x"
+    ]
+  , [ Assign "x" 1
+    , Print "x"
+
+    , Assign "y" 4  -- Should be deleted
+    , Assign "x" 2  -- Should be deleted
+    , Assign "x" 3
+    , Print "x"
+    ]
+  , [ Assign "x" 1
+    , Print "x"
+
+    , Assign "y" 4
+    , Assign "x" 2  -- Should be deleted
+    , Assign "x" 3
+    , Print "x"
+    , Print "y"
+    ]
+  , [ Assign "x" 1  -- Should be deleted (but is not? more than 1 iteration needed?)
+    , Increment "x"  -- Should be deleted
+    , Assign "x" 10
+    , Increment "x"
+    , Assign "y" 2  -- Should be deleted
     , Print "x"
     ]
   ]
@@ -152,19 +178,25 @@ dce instructions = do
           lineNrs = map fst program'
           successors = uncurry Succ <$> zip lineNrs (drop 1 lineNrs)
       Souffle.addFacts prog successors
-      traverse_ extractFacts program'
+      traverse_ (extractFacts prog) program'
       Souffle.run prog
       deadInsts <- Souffle.getFacts prog
       pure $ simplify deadInsts program'
-      where extractFacts (lineNr, inst) = case inst of
-              Assign varName _ ->
-                Souffle.addFact prog $ Define lineNr varName
-              Print varName ->
-                Souffle.addFact prog $ Use lineNr varName
-            simplify :: [DeadCode] -> [(LineNr, Instruction)] -> Program
-            simplify deadInsts =
-              let deadLineNrs = [i | DeadCode i <- deadInsts]
-              in map snd . filter ((`notElem` deadLineNrs) . fst)
+
+extractFacts :: Souffle.Handle DCE -> (LineNr, Instruction) -> Souffle.SouffleM ()
+extractFacts prog (lineNr, inst) = case inst of
+  Assign varName _ ->
+    Souffle.addFact prog $ Define lineNr varName
+  Increment varName -> do
+    Souffle.addFact prog $ Define lineNr varName
+    Souffle.addFact prog $ Use lineNr varName
+  Print varName ->
+    Souffle.addFact prog $ Use lineNr varName
+
+simplify :: [DeadCode] -> [(LineNr, Instruction)] -> Program
+simplify deadInsts =
+  let deadLineNrs = [i | DeadCode i <- deadInsts]
+  in map snd . filter ((`notElem` deadLineNrs) . fst)
 
 main :: IO ()
 main = for_ scenarios $ \program -> do
