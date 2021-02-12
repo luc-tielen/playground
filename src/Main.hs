@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TupleSections #-}
 
 module Main ( main ) where
 
@@ -10,12 +11,40 @@ import Prelude hiding (succ)
 import qualified Language.Souffle.Interpreted as Souffle
 import Language.Souffle.Experimental hiding (VarName)
 import Data.Foldable
-import Data.Map ( Map )
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad.State
 import GHC.Generics
 import Data.Int
-import Data.Maybe (catMaybes)
+import Data.Maybe (mapMaybe, listToMaybe)
+
+
+type VarName = String
+type Value = Int
+
+-- Currently we only have a single type of expression: a variable (lookup)
+type Expr = VarName
+
+data Instruction a
+  = Assign a VarName Value
+  | Increment a VarName
+  | Print a VarName
+  | If a Expr [Instruction a] [Instruction a]
+  deriving (Eq, Show)
+
+type Program a = [Instruction a]
+
+assign :: VarName -> Value -> Instruction ()
+assign = Assign ()
+
+print_ :: VarName -> Instruction ()
+print_ = Print ()
+
+if_ :: VarName -> [Instruction ()] -> [Instruction ()] -> Instruction ()
+if_ = If ()
+
+incr :: VarName -> Instruction ()
+incr = Increment ()
 
 
 type Id = Int32
@@ -31,55 +60,180 @@ fresh = do
 runSupplyT :: Monad m => Id -> SupplyT m a -> m a
 runSupplyT = flip evalStateT
 
-annotate :: AST () -> SupplyT IO (AST Id)
+annotate :: Instruction () -> SupplyT IO (Instruction Id)
 annotate = \case
   Assign _ varName value -> do
-    lineNr <- fresh
-    pure $ Assign lineNr varName value
+    nodeId <- fresh
+    pure $ Assign nodeId varName value
   Print _ varName -> do
-    lineNr <- fresh
-    pure $ Print lineNr varName
+    nodeId <- fresh
+    pure $ Print nodeId varName
   Increment _ varName -> do
-    lineNr <- fresh
-    pure $ Increment lineNr varName
-  Block _ insts -> do
-    lineNr <- fresh
-    Block lineNr <$> traverse annotate insts
+    nodeId <- fresh
+    pure $ Increment nodeId varName
+  If _ c t f -> do
+    nodeId <- fresh
+    If nodeId c <$> traverse annotate t <*> traverse annotate f
 
-type VarName = String
-type Value = Int
-
-data AST a
-  = Assign a VarName Value
-  | Increment a VarName
-  | Print a VarName
-  | Block a [AST a]
-  deriving (Eq, Show)
-
-assign :: VarName -> Value -> AST ()
-assign = Assign ()
-
-print_ :: VarName -> AST ()
-print_ = Print ()
-
-incr :: VarName -> AST ()
-incr = Increment ()
 
 type Env = Map VarName Value
 
-eval :: AST a -> IO ()
-eval stmt = flip evalStateT mempty $ go stmt where
-  go :: AST a -> StateT Env IO ()
+eval :: Program a -> IO ()
+eval stmt = flip evalStateT mempty $ traverse_ go stmt where
+  go :: Instruction a -> StateT Env IO ()
   go = \case
     Assign _ varName value -> modify (Map.insert varName value)
     Increment _ varName -> modify (Map.adjust (+1) varName)
     Print _ varName -> do
       value <- gets (Map.lookup varName)
-      lift $ putStrLn $ show value
-    Block _ insts -> traverse_ go insts
+      lift . putStrLn $ show value
+    If _ c t f -> gets (Map.lookup c) >>= \case
+      Nothing -> liftIO $ putStrLn $ "Unbound variable: " <> c
+      Just value ->
+        if value /= 0 then traverse_ go t else traverse_ go f
 
-scenarios :: [AST ()]
-scenarios = map (Block ())
+
+data DCE = DCE
+
+type LineNr = Int32
+
+data Define = Define LineNr VarName
+  deriving (Generic, FactMetadata)
+
+data Use = Use LineNr VarName
+  deriving (Generic, FactMetadata)
+
+data Live = Live LineNr VarName
+  deriving (Generic, FactMetadata, Show)
+
+data Succ = Succ LineNr LineNr
+  deriving (Show, Generic, FactMetadata)
+
+data DeadCode = DeadCode LineNr
+  deriving (Generic, Show, FactMetadata)
+
+instance Souffle.Program DCE where
+  type ProgramFacts DCE = '[Define, Use, Live, Succ, DeadCode]
+  programName = const "dce"
+
+instance Souffle.Fact Define where
+  type FactDirection Define = 'Souffle.Input
+  factName = const "define"
+
+instance Souffle.Fact Use where
+  type FactDirection Use = 'Souffle.Input
+  factName = const "use"
+
+instance Souffle.Fact Live where
+  type FactDirection Live = 'Souffle.Internal
+  factName = const "live"
+
+instance Souffle.Fact Succ where
+  type FactDirection Succ = 'Souffle.Input
+  factName = const "succ"
+
+instance Souffle.Fact DeadCode where
+  type FactDirection DeadCode = 'Souffle.Output
+  factName = const "deadcode"
+
+instance Souffle.Marshal Define
+instance Souffle.Marshal Use
+instance Souffle.Marshal DeadCode
+instance Souffle.Marshal Live
+instance Souffle.Marshal Succ
+
+algorithm :: DSL DCE 'Definition ()
+algorithm = do
+  Predicate define <- predicateFor @Define
+  Predicate use <- predicateFor @Use
+  Predicate succ <- predicateFor @Succ
+  Predicate live <- predicateFor @Live
+  Predicate deadCode <- predicateFor @DeadCode
+
+  lineNr <- var "lineNr1"
+  lineNr2 <- var "lineNr2"
+  varName <- var "varName"
+
+  live(lineNr, varName) |- do
+    succ(lineNr, lineNr2)
+    use(lineNr2, varName)
+  live(lineNr, varName) |- do
+    succ(lineNr, lineNr2)
+    live(lineNr2, varName)
+    not' $ define(lineNr2, varName)
+
+  deadCode(lineNr) |- do
+    define(lineNr, varName)
+    not' $ live(lineNr, varName)
+
+
+dce :: Program Id -> IO (Program Id)
+dce insts = do
+  runSouffleInterpreted DCE algorithm $ \case
+    Nothing -> do
+      liftIO $ putStrLn "Failed to load Souffle"
+      pure insts
+    Just prog -> do
+      traverse_ (extractFacts prog) insts
+      Souffle.addFacts prog $ successors insts
+      Souffle.run prog
+      deadInsts <- Souffle.getFacts prog
+      pure $ simplify deadInsts insts
+
+extractFacts :: Souffle.Handle DCE -> Instruction Id -> Souffle.SouffleM ()
+extractFacts prog = \case
+  Assign nodeId varName _ ->
+    Souffle.addFact prog $ Define nodeId varName
+  Increment nodeId varName -> do
+    Souffle.addFact prog $ Define nodeId varName
+    Souffle.addFact prog $ Use nodeId varName
+  Print nodeId varName ->
+    Souffle.addFact prog $ Use nodeId varName
+  If nodeId c t f -> do
+    Souffle.addFact prog $ Use nodeId c
+    traverse_ (traverse_ $ extractFacts prog) [t, f]
+
+successors :: Program Id -> [Succ]
+successors insts = direct <> nested where
+  direct = mconcat $ zipWith g insts nextIds
+  nested = concatMap h insts
+  g inst nextId = uncurry Succ <$> map (,nextId) (lastIds inst)
+  h = \case
+    If nodeId _ t f ->
+      let succsT = successors t
+          succsF = successors f
+          succs = Succ nodeId <$> firstIds [t, f]
+      in succs <> succsT <> succsF
+    _ -> []
+  nextIds = drop 1 $ map getId insts
+  firstIds = mapMaybe (fmap getId . listToMaybe)
+  lastIds = \case
+    If _ _ t f ->
+      mconcat $ mapMaybe (fmap lastIds . listToMaybe . reverse) [t, f]
+    inst ->
+      [getId inst]
+
+simplify :: [DeadCode] -> Program Id -> Program Id
+simplify deadInsts = go [i | DeadCode i <- deadInsts] where
+  go lineNrs = mapMaybe $ \inst ->
+    if getId inst `elem` lineNrs
+      then Nothing
+      else Just (transform lineNrs inst)
+  transform lineNrs = \case
+    If nodeId c t f ->
+      If nodeId c (go lineNrs t) (go lineNrs f)
+    inst -> inst
+
+getId :: Instruction Id -> Id
+getId = \case
+  Assign i _ _ -> i
+  Increment i _ -> i
+  Print i _ -> i
+  If i _ _ _ -> i
+
+
+scenarios :: [Program ()]
+scenarios =
   [ [ assign "x" 1
     , assign "y" 2  -- This should be deleted (dead code)
     , print_ "x"
@@ -130,139 +284,64 @@ scenarios = map (Block ())
     , print_ "x"
     ]
   , [ assign "x" 1 ]
+  , [ assign "x" 1
+    , assign "y" 2
+    , if_ "y"
+        [assign "x" 2, assign "x" 3]
+        [print_ "x"]
+    , print_ "x"
+    ]
+  , [ assign "x" 1
+    , assign "y" 2
+    , if_ "y"
+        [ assign "x" 2  -- Should be deleted
+        , assign "x" 3
+        ]
+        [print_ "x"]
+    , print_ "x"
+    ]
+  , [ assign "x" 1  -- Should be deleted
+    , assign "y" 2
+    , if_ "y"
+        [ assign "x" 2  -- Should be deleted
+        , assign "x" 3
+        ]
+        [assign "x" 4]
+    , print_ "x"
+    ]
+  , [ assign "y" 1
+    , if_ "y"
+        [ if_ "y"
+            [ assign "x" 2  -- Should be deleted
+            , assign "x" 3
+            ]
+            [ assign "x" 4 ]
+        ]
+        [assign "x" 5]
+    , print_ "x"
+    ]
+  , [ assign "y" 1
+    , if_ "y"
+        [assign "x" 2]  -- Should be deleted
+        [assign "x" 3]  -- Should be deleted
+    , assign "x" 4
+    , print_ "x"
+    ]
+  , [ assign "y" 1
+    , if_ "y"
+        [assign "x" 2]
+        [assign "x" 3]
+    , print_ "x"
+    , assign "x" 4
+    , print_ "x"
+    ]
   ]
 
 
-
-algorithm :: DSL DCE 'Definition ()
-algorithm = do
-  Predicate define <- predicateFor @Define
-  Predicate use <- predicateFor @Use
-  Predicate succ <- predicateFor @Succ
-  Predicate live <- predicateFor @Live
-  Predicate deadCode <- predicateFor @DeadCode
-
-  lineNr <- var "lineNr1"
-  lineNr2 <- var "lineNr2"
-  varName <- var "varName"
-
-  live(lineNr, varName) |- do
-    succ(lineNr, lineNr2)
-    use(lineNr2, varName)
-  live(lineNr, varName) |- do
-    succ(lineNr, lineNr2)
-    live(lineNr2, varName)
-    not' $ define(lineNr2, varName)
-
-  deadCode(lineNr) |- do
-    define(lineNr, varName)
-    not' $ live(lineNr, varName)
-
-data DCE = DCE
-
-type LineNr = Int32
-
-data Define = Define LineNr VarName
-  deriving (Generic, FactMetadata)
-
-data Use = Use LineNr VarName
-  deriving (Generic, FactMetadata)
-
-data Live = Live LineNr VarName
-  deriving (Generic, FactMetadata, Show)
-
-data Succ = Succ LineNr LineNr
-  deriving (Generic, FactMetadata)
-
-data DeadCode = DeadCode LineNr
-  deriving (Generic, Show, FactMetadata)
-
-instance Souffle.Program DCE where
-  type ProgramFacts DCE = '[Define, Use, Live, DeadCode, Succ]
-  programName = const "dce"
-
-instance Souffle.Fact Define where
-  type FactDirection Define = 'Souffle.Input
-  factName = const "define"
-
-instance Souffle.Fact Use where
-  type FactDirection Use = 'Souffle.Input
-  factName = const "use"
-
-instance Souffle.Fact Live where
-  type FactDirection Live = 'Souffle.Internal
-  factName = const "live"
-
-instance Souffle.Fact Succ where
-  type FactDirection Succ = 'Souffle.Input
-  factName = const "succ"
-
-instance Souffle.Fact DeadCode where
-  type FactDirection DeadCode = 'Souffle.Output
-  factName = const "deadcode"
-
-instance Souffle.Marshal Define
-instance Souffle.Marshal Use
-instance Souffle.Marshal DeadCode
-instance Souffle.Marshal Live
-instance Souffle.Marshal Succ
-
-dce :: AST Id -> IO (Maybe (AST Id))
-dce stmt = do
-  runSouffleInterpreted DCE algorithm $ \case
-    Nothing -> do
-      liftIO $ putStrLn "Failed to load Souffle"
-      pure $ Just stmt
-    Just prog -> do
-      extractFacts prog stmt
-      Souffle.run prog
-      deadInsts <- Souffle.getFacts prog
-      pure $ simplify deadInsts stmt
-
-extractFacts :: Souffle.Handle DCE -> AST Id -> Souffle.SouffleM ()
-extractFacts prog = \case
-  Assign lineNr varName _ ->
-    Souffle.addFact prog $ Define lineNr varName
-  Increment lineNr varName -> do
-    Souffle.addFact prog $ Define lineNr varName
-    Souffle.addFact prog $ Use lineNr varName
-  Print lineNr varName ->
-    Souffle.addFact prog $ Use lineNr varName
-  Block _ insts -> do
-    traverse_ (extractFacts prog) insts
-    let lineNrs = map getId insts
-        successors = uncurry Succ <$> zip lineNrs (drop 1 lineNrs)
-    Souffle.addFacts prog successors
-
-getId :: AST Id -> Id
-getId = \case
-  Assign i _ _ -> i
-  Increment i _ -> i
-  Print i _ -> i
-  Block i _ -> i
-
-simplify :: [DeadCode] -> AST Id -> Maybe (AST Id)
-simplify deadInsts stmt = case stmt of
-  Block nodeId insts ->
-    simplify' stmt $
-      case catMaybes $ simplify deadInsts <$> insts of
-        [] -> Nothing
-        simplifiedInsts -> Just $ Block nodeId simplifiedInsts
-  _ -> simplify' stmt (Just stmt)
-  where deadLineNrs = [i | DeadCode i <- deadInsts]
-        simplify' original modified =
-          let nodeId = getId original
-           in if nodeId `elem` deadLineNrs
-                then Nothing
-                else modified
-
 main :: IO ()
 main = for_ scenarios $ \program -> do
-  annotated  <- runSupplyT 0 (annotate program)
+  annotated  <- runSupplyT 0 (traverse annotate program)
   optimizedProgram <- dce annotated
-  case optimizedProgram of
-    Nothing -> print "Optimized away!"
-    Just optimizedProgram' -> do
-      print optimizedProgram'
-      eval optimizedProgram'
+  print optimizedProgram
+  eval optimizedProgram
 
