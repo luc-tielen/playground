@@ -168,17 +168,16 @@ algorithm = do
 
 
 dce :: Program Id -> IO (Program Id)
-dce insts = do
-  runSouffleInterpreted DCE algorithm $ \case
-    Nothing -> do
-      liftIO $ putStrLn "Failed to load Souffle"
-      pure insts
-    Just prog -> do
-      traverse_ (extractFacts prog) insts
-      Souffle.addFacts prog $ successors insts
-      Souffle.run prog
-      deadInsts <- Souffle.getFacts prog
-      pure $ simplify deadInsts insts
+dce insts = runSouffleInterpreted DCE algorithm $ \case
+  Nothing -> do
+    liftIO $ putStrLn "Failed to load Souffle."
+    pure insts
+  Just prog -> do
+    traverse_ (extractFacts prog) insts
+    Souffle.addFacts prog $ successors insts
+    Souffle.run prog
+    deadInsts <- Souffle.getFacts prog
+    pure $ simplify deadInsts insts
 
 extractFacts :: Souffle.Handle DCE -> Instruction Id -> Souffle.SouffleM ()
 extractFacts prog = \case
@@ -194,10 +193,11 @@ extractFacts prog = \case
     traverse_ (traverse_ $ extractFacts prog) [t, f]
 
 successors :: Program Id -> [Succ]
-successors insts = direct <> nested where
-  direct = mconcat $ zipWith g insts nextIds
-  nested = concatMap h insts
-  g inst nextId = uncurry Succ <$> map (,nextId) (lastIds inst)
+successors insts = mconcat $ zipWith g insts nextIds where
+  g inst nextId =
+    let direct = uncurry Succ <$> map (,nextId) (lastIds inst)
+        nested = h inst
+     in direct <> nested
   h = \case
     If nodeId _ t f ->
       let succsT = successors t
