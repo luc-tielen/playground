@@ -18,6 +18,7 @@ import GHC.Generics
 import Data.Int
 import Data.Maybe (mapMaybe, listToMaybe)
 
+-- First, we define a statement-based language
 
 type VarName = String
 type Value = Int
@@ -25,6 +26,9 @@ type Value = Int
 -- Currently we only have a single type of expression: a variable (lookup)
 type Expr = VarName
 
+-- Type variable is used for annotations. Annotations start empty, but are then
+-- filled with unique IDs in a compiler pass. In a real compiler, this could be
+-- done during the parsing stage.
 data Instruction a
   = Assign a VarName Value
   | Increment a VarName
@@ -46,7 +50,7 @@ if_ = If ()
 incr :: VarName -> Instruction ()
 incr = Increment ()
 
-
+-- We define a "Supply" monad, for supplying us with unique IDs
 type Id = Int32
 
 type SupplyT = StateT Id
@@ -60,6 +64,7 @@ fresh = do
 runSupplyT :: Monad m => Id -> SupplyT m a -> m a
 runSupplyT = flip evalStateT
 
+-- Annotates the language with unique node IDs
 annotate :: Instruction () -> SupplyT IO (Instruction Id)
 annotate = \case
   Assign _ varName value -> do
@@ -75,22 +80,6 @@ annotate = \case
     nodeId <- fresh
     If nodeId c <$> traverse annotate t <*> traverse annotate f
 
-
-type Env = Map VarName Value
-
-eval :: Program a -> IO ()
-eval stmt = flip evalStateT mempty $ traverse_ go stmt where
-  go :: Instruction a -> StateT Env IO ()
-  go = \case
-    Assign _ varName value -> modify (Map.insert varName value)
-    Increment _ varName -> modify (Map.adjust (+1) varName)
-    Print _ varName -> do
-      value <- gets (Map.lookup varName)
-      lift . putStrLn $ show value
-    If _ c t f -> gets (Map.lookup c) >>= \case
-      Nothing -> liftIO $ putStrLn $ "Unbound variable: " <> c
-      Just value ->
-        if value /= 0 then traverse_ go t else traverse_ go f
 
 
 data DCE = DCE
@@ -142,6 +131,7 @@ instance Souffle.Marshal DeadCode
 instance Souffle.Marshal Live
 instance Souffle.Marshal Succ
 
+-- The Datalog algorithm for computing dead code.
 algorithm :: DSL DCE 'Definition ()
 algorithm = do
   Predicate define <- predicateFor @Define
@@ -166,7 +156,7 @@ algorithm = do
     define(lineNr, varName)
     not' $ live(lineNr, varName)
 
-
+-- Optimizes a program using a dead code elimination (dce) pass.
 dce :: Program Id -> IO (Program Id)
 dce insts = runSouffleInterpreted DCE algorithm $ \case
   Nothing -> do
@@ -179,6 +169,8 @@ dce insts = runSouffleInterpreted DCE algorithm $ \case
     deadInsts <- Souffle.getFacts prog
     pure $ simplify deadInsts insts
 
+-- Helper function that traverses the AST and collects facts when a variable
+-- is defined or used. This information is used in the live variable analysis.
 extractFacts :: Souffle.Handle DCE -> Instruction Id -> Souffle.SouffleM ()
 extractFacts prog = \case
   Assign nodeId varName _ ->
@@ -192,6 +184,27 @@ extractFacts prog = \case
     Souffle.addFact prog $ Use nodeId c
     traverse_ (traverse_ $ extractFacts prog) [t, f]
 
+{-
+Helper function for computing a list of successors in a program.
+On the datalog side this is used to compute the live variables.
+
+Given a snippet:
+
+if (x == true) {      // 1
+  if (y == 1000) {    // 2
+    print(x);         // 3
+    print(y);         // 4
+  } else {
+    print(y);         // 5
+  }
+} else {
+  print(42);          // 6
+}
+print(z);             // 7
+
+This should give us the following successors:
+[(1, 2), (2, 3), (3, 4), (4,7), (2, 5), (5, 7), (1,6), (6, 7)]
+-}
 successors :: Program Id -> [Succ]
 successors insts = mconcat $ zipWith g insts nextIds where
   g inst nextId =
@@ -213,6 +226,7 @@ successors insts = mconcat $ zipWith g insts nextIds where
     inst ->
       [getId inst]
 
+-- After the lines of dead code have been found, we can optimize (simplify) our program.
 simplify :: [DeadCode] -> Program Id -> Program Id
 simplify deadInsts = go [i | DeadCode i <- deadInsts] where
   go lineNrs = mapMaybe $ \inst ->
@@ -231,7 +245,25 @@ getId = \case
   Print i _ -> i
   If i _ _ _ -> i
 
+type Env = Map VarName Value
 
+-- An evaluator (mostly used for testing if behavior is the same after optimization)
+eval :: Program a -> IO ()
+eval stmt = flip evalStateT mempty $ traverse_ go stmt where
+  go :: Instruction a -> StateT Env IO ()
+  go = \case
+    Assign _ varName value -> modify (Map.insert varName value)
+    Increment _ varName -> modify (Map.adjust (+1) varName)
+    Print _ varName -> do
+      value <- gets (Map.lookup varName)
+      lift . putStrLn $ show value
+    If _ c t f -> gets (Map.lookup c) >>= \case
+      Nothing -> liftIO $ putStrLn $ "Unbound variable: " <> c
+      Just value ->
+        if value /= 0 then traverse_ go t else traverse_ go f
+
+
+-- Some test scenarios
 scenarios :: [Program ()]
 scenarios =
   [ [ assign "x" 1
@@ -343,5 +375,6 @@ main = for_ scenarios $ \program -> do
   annotated  <- runSupplyT 0 (traverse annotate program)
   optimizedProgram <- dce annotated
   print optimizedProgram
+  --eval annotated
   eval optimizedProgram
 
