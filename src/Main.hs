@@ -1,5 +1,4 @@
 
-{-# OPTIONS_GHC -Wno-unused-top-binds #-}
 {-# OPTIONS_GHC -Wno-incomplete-patterns #-}  -- TODO remove
 module Main ( main ) where
 
@@ -7,7 +6,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import Data.Maybe (mapMaybe)
 import Data.Foldable (traverse_)
-import Data.Function ((&))
+import Data.Function ((&), fix)
 import Data.Containers.ListUtils (nubOrd)
 import Control.Arrow ((>>>))
 
@@ -30,66 +29,18 @@ data Rule
   = Rule
   { ruleHead :: Fact
   , ruleBody :: [Fact]
-  }
+  } deriving Show
 
 type Database = [Fact]
 
 type Query = Fact
 
 
-
--- Facts
-x, y :: Term
-x = Var "X"
-y = Var "Y"
-
-parent :: Term -> Term -> Fact
-parent p c = Fact "parent" [p, c]
-
-father :: Term -> Term -> Fact
-father a b = Fact "father" [a, b]
-
-man, woman, animal, human :: Term -> Fact
-man a = Fact "man" [a]
-woman a = Fact "woman" [a]
-animal a = Fact "animal" [a]
-human a = Fact "human" [a]
-
-fatherRule :: Rule
-fatherRule = Rule hd body where
-  hd = father x y
-  body = [parent x y, man x]
-
-abe, bob, abby, carl, connor, tiger :: Term
-abe = Constant "Abe"
-bob = Constant "Bob"
-abby = Constant "Abby"
-carl = Constant "Carl"
-connor = Constant "Connor"
-beatrice = Constant "Beatrice"
-tiger = Constant "Tiger"
-
-database :: Database
-database =
-  [ parent abe bob
-  , parent abby bob
-  , parent bob carl
-  , parent bob connor
-  , parent beatrice carl
-  , man abe
-  , man bob
-  , woman abby
-  , woman beatrice
-  ]
-
-
--- Rules
-rules :: [Rule]
-rules = [fatherRule]
+-- Implementation:
 
 generateKnowledgeBase :: (Database -> Rule -> [Fact])
                       -> [Rule] -> Database -> Database
-generateKnowledgeBase f rs db = nubOrd $ concatMap (f db) rs
+generateKnowledgeBase f rs db = nubOrd $ db ++ concatMap (f db) rs
 
 nameMatches :: Fact -> Fact -> Bool
 nameMatches f1 f2 = factName f1 == factName f2
@@ -120,11 +71,6 @@ evaluateLogicalOperatorsInRule db r =
       inferFact = Fact ruleName . ruleAttrs rHead
    in map inferFact attrs
 
-runLogicalOperators :: Database -> [Rule] -> Query -> [Fact]
-runLogicalOperators db rs q =
-  let kb = generateKnowledgeBase evaluateLogicalOperatorsInRule rs db
-   in filter (matches q) kb
-
 -- in blog: called match_relation_and_db
 matchRelationInDb :: Database -> Fact -> [Map Term Term]
 matchRelationInDb db fact =
@@ -135,17 +81,70 @@ matchRelationInDb db fact =
 conjunct :: [[Map Term Term]] -> [Map Term Term]
 conjunct = \case
   [bodyAttrs] -> bodyAttrs
-  [attr1, attr2] ->
+  [attr1, attr2] -> -- TODO handle more than 2 clauses
     [Map.union a2 a1 | a1 <- attr1, a2 <- attr2, hasCommonValue a1 a2]
 
 ruleAttrs :: Fact -> Map Term Term -> [Term]
 ruleAttrs relation factAttrs =
   mapMaybe (flip Map.lookup factAttrs) $ factTerms relation
 
-query :: Query
-query = father x y
+runRecursive :: [Rule] -> Query -> Database -> Database
+runRecursive rs q =
+  let deriveExtraFacts = generateKnowledgeBase evaluateLogicalOperatorsInRule rs
+      f rec db =
+        let db' = deriveExtraFacts db
+        in if db' == db
+              then db'
+              else rec db'
+   in filter (matches q) . fix f
 
 main :: IO ()
 main = do
-  let results = runLogicalOperators database rules query
+  let results = runRecursive rules query database
   traverse_ print results
+
+
+-- Datalog setup code:
+x, y, z :: Term
+x = Var "X"
+y = Var "Y"
+z = Var "Z"
+
+parent :: Term -> Term -> Fact
+parent p c = Fact "parent" [p, c]
+
+ancestor :: Term -> Term -> Fact
+ancestor a b = Fact "ancestor" [a, b]
+
+personA, personB, personC, personD, personAA, personBB, personCC :: Term
+personA = Constant "A"
+personB = Constant "B"
+personC = Constant "C"
+personD = Constant "D"
+personAA = Constant "AA"
+personBB = Constant "BB"
+personCC = Constant "CC"
+
+database :: Database
+database =
+  [ parent personA personB
+  , parent personB personC
+  , parent personC personD
+  , parent personAA personBB
+  , parent personBB personCC
+  ]
+
+
+rules :: [Rule]
+rules = [ancestorBaseRule, ancestorRecursiveRule]
+
+ancestorBaseRule, ancestorRecursiveRule :: Rule
+ancestorBaseRule = Rule hd body where
+  hd = ancestor x y
+  body = [parent x y]
+ancestorRecursiveRule = Rule hd body where
+  hd = ancestor x z
+  body = [parent x y, ancestor y z]
+
+query :: Query
+query = ancestor x y
