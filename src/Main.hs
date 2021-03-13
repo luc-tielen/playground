@@ -4,6 +4,10 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE DeriveFoldable #-}
+{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveTraversable #-}
 module Main ( main ) where
 
 
@@ -34,6 +38,8 @@ import Control.Monad.IO.Class
 import GHC.Generics
 import Data.Int
 import Control.Monad.Reader
+import Data.Functor.Foldable
+import Data.Functor.Foldable.TH
 
 type Var = String
 type Value = Int
@@ -41,8 +47,10 @@ type Value = Int
 data Statement
   = Block [Statement]
   | Assign Var Value
+  | Print Var
   deriving Show
 
+makeBaseFunctor ''Statement
 
 
 scenarios :: [Statement]
@@ -131,17 +139,23 @@ run stmt = runSouffleInterpreted NameShadowing algorithm $ \case
     S.getFacts prog
 
 extractFacts :: S.Handle NameShadowing -> Statement -> S.SouffleM ()
-extractFacts prog = flip runReaderT 0 . f where
-  f = \case
-    Block stmts -> local (+1) $ do
+extractFacts prog = flip runReaderT 0 . cata alg where
+  alg = \case
+    BlockF actions -> local (+1) $ do
       currentScope <- ask
       when (currentScope > 0) $ do
         let prevScope = currentScope - 1
         S.addFact prog $ NestedScope prevScope currentScope
-      traverse_ f stmts
-    Assign variable _ -> do
+      -- TODO: add monadplus to SouffleM so we can use 'msum actions'
+      cata f actions
+    AssignF variable _ -> do
       currentScope <- ask
       S.addFact prog $ Define currentScope variable
+    _ -> pure ()
+  f = \case
+    Nil -> pure ()
+    Cons a1 a2 -> a1 *> a2
+
 
 main :: IO ()
 main = for_ scenarios $ \scenario -> do
