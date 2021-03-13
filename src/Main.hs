@@ -146,15 +146,11 @@ extractFacts prog = flip runReaderT 0 . cata alg where
       when (currentScope > 0) $ do
         let prevScope = currentScope - 1
         S.addFact prog $ NestedScope prevScope currentScope
-      -- TODO: add monadplus to SouffleM so we can use 'msum actions'
-      cata f actions
+      sequence_ actions
     AssignF variable _ -> do
       currentScope <- ask
       S.addFact prog $ Define currentScope variable
     _ -> pure ()
-  f = \case
-    Nil -> pure ()
-    Cons a1 a2 -> a1 *> a2
 
 
 main :: IO ()
