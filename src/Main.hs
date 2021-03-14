@@ -141,31 +141,6 @@ shadowingAlgorithm = do
     define(scope, v)
     define(subscope, v)
 
-run :: Statement -> IO [Shadowed]
-run stmt = runSouffleInterpreted NameShadowing shadowingAlgorithm $ \case
-  Nothing -> do
-    liftIO $ print "Failed to load Souffle"
-    pure []
-  Just prog -> do
-    extractFacts prog stmt
-    S.run prog
-    S.getFacts prog
-
-extractFacts :: S.Handle NameShadowing -> Statement -> S.SouffleM ()
-extractFacts prog = flip runReaderT 0 . cata alg where
-  -- TODO: figure out way to have Env the same for all static analysis passes?
-  alg :: StatementF (ReaderT Scope S.SouffleM a) -> ReaderT Scope S.SouffleM ()
-  alg = \case
-    BlockF actions -> local (+1) $ do
-      currentScope <- ask
-      when (currentScope > 0) $ do
-        let prevScope = currentScope - 1
-        S.addFact prog $ NestedScope prevScope currentScope
-      sequence_ actions
-    AssignF variable _ -> do
-      currentScope <- ask
-      S.addFact prog $ Define currentScope variable
-    _ -> pure ()
 
 
 data UnboundVariable = UnboundVariable
@@ -220,18 +195,41 @@ unboundVarAlgorithm = do
     define(v, line2)
     line1 .< line2
 
--- TODO merge with run
-run' :: Statement -> IO [Unbound]
-run' stmt = runSouffleInterpreted UnboundVariable unboundVarAlgorithm $ \case
-  Nothing -> do
+run :: Statement -> IO ([Shadowed], [Unbound])
+run stmt = go where
+  go = runSouffleInterpreted NameShadowing shadowingAlgorithm $ \case
+    Nothing -> abort
+    Just prog -> do
+      runSouffleInterpreted UnboundVariable unboundVarAlgorithm $ \case
+        Nothing -> abort
+        Just prog' -> runAlgorithms prog prog'
+  abort = do
     liftIO $ print "Failed to load Souffle"
-    pure []
-  Just prog -> do
-    extractFacts' prog stmt
+    pure ([], [])
+  runAlgorithms prog prog' = do
+    -- TODO: cata should be at this level, run only once
+    (extractFacts prog <> extractFacts' prog') stmt
     S.run prog
-    S.getFacts prog
+    S.run prog'
+    (,) <$> S.getFacts prog <*> S.getFacts prog'
 
--- TODO merge with extractFacts'
+
+extractFacts :: S.Handle NameShadowing -> Statement -> S.SouffleM ()
+extractFacts prog = flip runReaderT 0 . cata alg where
+  -- TODO: figure out way to have Env the same for all static analysis passes?
+  alg :: StatementF (ReaderT Scope S.SouffleM a) -> ReaderT Scope S.SouffleM ()
+  alg = \case
+    BlockF actions -> local (+1) $ do
+      currentScope <- ask
+      when (currentScope > 0) $ do
+        let prevScope = currentScope - 1
+        S.addFact prog $ NestedScope prevScope currentScope
+      sequence_ actions
+    AssignF variable _ -> do
+      currentScope <- ask
+      S.addFact prog $ Define currentScope variable
+    _ -> pure ()
+
 extractFacts' :: S.Handle UnboundVariable -> Statement -> S.SouffleM ()
 extractFacts' prog stmt = flip evalStateT 0 $ alg stmt where
   alg stmt' = incr *> alg' stmt'
@@ -250,6 +248,5 @@ main :: IO ()
 main = for_ scenarios $ \scenario -> do
   print "#################"
   print scenario
-  shadowedNames <- run scenario
-  unboundVars <- run' scenario
-  print (shadowedNames, unboundVars)
+  results <- run scenario
+  print results
