@@ -1,4 +1,6 @@
 
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeApplications #-}
@@ -40,7 +42,6 @@ import Data.Int
 import Control.Monad.Reader
 import Data.Functor.Foldable
 import Data.Functor.Foldable.TH
-import Control.Monad.State
 
 type Var = String
 type Value = Int
@@ -94,8 +95,6 @@ data NameShadowing = NameShadowing
 data Shadowed = Shadowed String
   deriving (Generic, Show, FactMetadata)
 
-type Scope = Int32
-
 data Define = Define Scope Var
   deriving (Generic, Show, FactMetadata)
 
@@ -145,7 +144,11 @@ shadowingAlgorithm = do
 
 data UnboundVariable = UnboundVariable
 
+type Scope = Int32
 type Line = Int32
+
+newtype Scope' = Scope' Scope
+newtype LineNr = LineNr Line
 
 data Use = Use Var Line
   deriving (Generic, FactMetadata)
@@ -195,6 +198,12 @@ unboundVarAlgorithm = do
     define(v, line2)
     line1 .< line2
 
+data Env
+  = Env
+  { _envScope :: Scope'
+  , _envLine :: LineNr
+  }
+
 run :: Statement -> IO ([Shadowed], [Unbound])
 run stmt = go where
   go = runSouffleInterpreted NameShadowing shadowingAlgorithm $ \case
@@ -207,41 +216,61 @@ run stmt = go where
     liftIO $ print "Failed to load Souffle"
     pure ([], [])
   runAlgorithms prog prog' = do
-    -- TODO: cata should be at this level, run only once
-    (extractFacts prog <> extractFacts' prog') stmt
+    let action = cata (compose (algNS prog) (algUV prog')) stmt
+        env = Env (Scope' 0) (LineNr 0)
+    flip runReaderT env action
     S.run prog
     S.run prog'
     (,) <$> S.getFacts prog <*> S.getFacts prog'
 
+compose :: (Applicative f, Semigroup b)
+        => (a -> f b)
+        -> (a -> f b)
+        -> a -> f b
+compose f g a = (<>) <$> f a <*> g a
 
-extractFacts :: S.Handle NameShadowing -> Statement -> S.SouffleM ()
-extractFacts prog = flip runReaderT 0 . cata alg where
-  -- TODO: figure out way to have Env the same for all static analysis passes?
-  alg :: StatementF (ReaderT Scope S.SouffleM a) -> ReaderT Scope S.SouffleM ()
-  alg = \case
-    BlockF actions -> local (+1) $ do
-      currentScope <- ask
-      when (currentScope > 0) $ do
-        let prevScope = currentScope - 1
-        S.addFact prog $ NestedScope prevScope currentScope
-      sequence_ actions
-    AssignF variable _ -> do
-      currentScope <- ask
-      S.addFact prog $ Define currentScope variable
-    _ -> pure ()
+algNS :: S.Handle NameShadowing
+      -> StatementF (ReaderT Env S.SouffleM a)
+      -> ReaderT Env S.SouffleM ()
+algNS prog = \case
+  BlockF actions -> local newScope $ do
+    Scope' currentScope <- asks _envScope
+    when (currentScope > 0) $ do
+      let prevScope = currentScope - 1
+      S.addFact prog $ NestedScope prevScope currentScope
+    sequence_ actions
+  AssignF variable _ -> do
+    Scope' currentScope <- asks _envScope
+    S.addFact prog $ Define currentScope variable
+  _ -> pure ()
+  where newScope (Env (Scope' s) line) = Env (Scope' (s + 1)) line
 
-extractFacts' :: S.Handle UnboundVariable -> Statement -> S.SouffleM ()
-extractFacts' prog stmt = flip evalStateT 0 $ alg stmt where
-  alg stmt' = incr *> alg' stmt'
-  alg' = \case
-    Block stmts -> traverse_ alg stmts
-    Assign variable _ -> do
-      line <- get
-      S.addFact prog $ Define' variable line
-    Print variable -> do
-      line <- get
-      S.addFact prog $ Use variable line
-  incr = modify (+1)
+algUV :: S.Handle UnboundVariable
+      -> StatementF (ReaderT Env S.SouffleM a)
+      -> ReaderT Env S.SouffleM ()
+algUV prog = local incrLine . \case
+  BlockF actions -> sequence_ actions
+  AssignF variable _ -> do
+    LineNr line <- asks _envLine
+    S.addFact prog $ Define' variable line
+  PrintF variable -> do
+    LineNr line <- asks _envLine
+    S.addFact prog $ Use variable line
+  where incrLine (Env s (LineNr line)) = Env s (LineNr (line + 1))
+
+
+
+--extractFacts' :: S.Handle UnboundVariable -> Statement -> S.SouffleM ()
+--extractFacts' prog stmt = flip runReaderT 0 $ alg stmt where
+  --alg stmt' = local (+1) $ alg' stmt'
+  --alg' = \case
+    --Block stmts -> traverse_ alg stmts
+    --Assign variable _ -> do
+      --line <- ask
+      --S.addFact prog $ Define' variable line
+    --Print variable -> do
+      --line <- ask
+      --S.addFact prog $ Use variable line
 
 
 main :: IO ()
