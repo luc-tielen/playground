@@ -42,6 +42,7 @@ import Data.Int
 import Control.Monad.Reader
 import Data.Functor.Foldable
 import Data.Functor.Foldable.TH
+import Control.Lens hiding (use)
 
 type Var = String
 type Value = Int
@@ -141,7 +142,6 @@ shadowingAlgorithm = do
     define(subscope, v)
 
 
-
 data UnboundVariable = UnboundVariable
 
 type Scope = Int32
@@ -203,6 +203,7 @@ data Env
   { _envScope :: Scope'
   , _envLine :: LineNr
   }
+makeLenses ''Env
 
 run :: Statement -> IO ([Shadowed], [Unbound])
 run stmt = go where
@@ -217,8 +218,7 @@ run stmt = go where
     pure ([], [])
   runAlgorithms prog prog' = do
     let action = cata (compose (algNS prog) (algUV prog')) stmt
-        env = Env (Scope' 0) (LineNr 0)
-    flip runReaderT env action
+    flip runReaderT (Env (Scope' 0) (LineNr 0)) action
     S.run prog
     S.run prog'
     (,) <$> S.getFacts prog <*> S.getFacts prog'
@@ -229,49 +229,49 @@ compose :: (Applicative f, Semigroup b)
         -> a -> f b
 compose f g a = (<>) <$> f a <*> g a
 
-algNS :: S.Handle NameShadowing
-      -> StatementF (ReaderT Env S.SouffleM a)
-      -> ReaderT Env S.SouffleM ()
+class HasScope env where
+  scope :: Lens' env Scope'
+
+instance HasScope Env where
+  scope = envScope
+
+class HasLine env where
+  line :: Lens' env LineNr
+
+instance HasLine Env where
+  line = envLine
+
+
+algNS :: HasScope r
+      => S.Handle NameShadowing
+      -> StatementF (ReaderT r S.SouffleM a)
+      -> ReaderT r S.SouffleM ()
 algNS prog = \case
-  BlockF actions -> local newScope $ do
-    Scope' currentScope <- asks _envScope
+  BlockF actions -> locally scope newScope $ do
+    Scope' currentScope <- view scope
     when (currentScope > 0) $ do
       let prevScope = currentScope - 1
       S.addFact prog $ NestedScope prevScope currentScope
     sequence_ actions
   AssignF variable _ -> do
-    Scope' currentScope <- asks _envScope
+    Scope' currentScope <- view scope
     S.addFact prog $ Define currentScope variable
   _ -> pure ()
-  where newScope (Env (Scope' s) line) = Env (Scope' (s + 1)) line
+  where newScope (Scope' s) = Scope' (s + 1)
 
-algUV :: S.Handle UnboundVariable
-      -> StatementF (ReaderT Env S.SouffleM a)
-      -> ReaderT Env S.SouffleM ()
-algUV prog = local incrLine . \case
+algUV :: HasLine r
+      => S.Handle UnboundVariable
+      -> StatementF (ReaderT r S.SouffleM a)
+      -> ReaderT r S.SouffleM ()
+algUV prog = locally line incrLine . \case
   BlockF actions -> sequence_ actions
   AssignF variable _ -> do
-    LineNr line <- asks _envLine
-    S.addFact prog $ Define' variable line
+    LineNr l <- view line
+    S.addFact prog $ Define' variable l
   PrintF variable -> do
-    LineNr line <- asks _envLine
-    S.addFact prog $ Use variable line
-  where incrLine (Env s (LineNr line)) = Env s (LineNr (line + 1))
-
-
-
---extractFacts' :: S.Handle UnboundVariable -> Statement -> S.SouffleM ()
---extractFacts' prog stmt = flip runReaderT 0 $ alg stmt where
-  --alg stmt' = local (+1) $ alg' stmt'
-  --alg' = \case
-    --Block stmts -> traverse_ alg stmts
-    --Assign variable _ -> do
-      --line <- ask
-      --S.addFact prog $ Define' variable line
-    --Print variable -> do
-      --line <- ask
-      --S.addFact prog $ Use variable line
-
+    LineNr l <- view line
+    S.addFact prog $ Use variable l
+  where incrLine (LineNr l) = LineNr (l + 1)
 
 main :: IO ()
 main = for_ scenarios $ \scenario -> do
