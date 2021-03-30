@@ -87,7 +87,7 @@ scenarios =
     , Block
       [ Assign "x" 42  -- shadowed in same scope, because of mutable reassignment
       ]
-    , Print "y"
+    , Print "y"  -- Unbound
     ]
   ]
 
