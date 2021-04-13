@@ -25,11 +25,15 @@ Scenario 1: declaration in a nested scope
   }
 }
 
-Scenario 2: declaration in same scope (mutable assignment)
+Scenario 2: unbound variables
 
-{   // Scope 0
+{   
+  print x  <- x is not defined yet, should give an error
+}
+OR:
+{
+  print x  <- x is defined after using it
   x = 42
-  x = 1000     <- This should give a warning
 }
 -}
 
