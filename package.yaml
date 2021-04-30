@@ -20,6 +20,7 @@ dependencies:
   - containers >= 0.6.2.1 && < 1
   - recursion-schemes
   - souffle-haskell
+  - souffle-dsl
 
 default-extensions:
   - OverloadedStrings

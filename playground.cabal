@@ -1,10 +1,10 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.2.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 306d92dafee60f2c4906f50cb7008a98a5e258ee7fe7202defd172d7790c42b3
+-- hash: a3cdfa21468f56fcebf061e1f04621ba811c0a59739622f776b426eb226a4b12
 
 name:           playground
 version:        0.0.1
@@ -41,6 +41,7 @@ executable playground
     , containers >=0.6.2.1 && <1
     , mtl >=2.0 && <3
     , recursion-schemes
+    , souffle-dsl
     , souffle-haskell
     , text >=1.0 && <2
   if os(linux)

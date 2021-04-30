@@ -9,8 +9,8 @@ let
   souffle-haskell-src = pkgs.fetchFromGitHub {
     owner = "luc-tielen";
     repo  = "souffle-haskell";
-    rev = "7d26105affe8e1ead95033870e954ea352feb573";
-    sha256 = "06igl7ws8mchsiy4ba3rfj03yksr19dcr2lmh74mlarwn2mw3m5f";
+    rev = "1f8970e534b8db03cef7f277062a61717b3db543";
+    sha256 = "0ml21yfdrkzn41yhrsl6v7akwspwydidll8lxcrm8yld4hr2z89c";
   };
   haskellPkgs = haskellPackages.override {
     overrides = self: super: {

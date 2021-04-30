@@ -9,7 +9,7 @@ module Main ( main ) where
 
 import Prelude hiding (succ)
 import qualified Language.Souffle.Interpreted as Souffle
-import Language.Souffle.Experimental hiding (VarName)
+import Language.Souffle.DSL hiding (VarName)
 import Data.Foldable
 import Data.Map (Map)
 import qualified Data.Map as Map
