@@ -1,10 +1,10 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.33.0.
+-- This file has been generated from package.yaml by hpack version 0.34.6.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 306d92dafee60f2c4906f50cb7008a98a5e258ee7fe7202defd172d7790c42b3
+-- hash: 642249d018ceeaaa5a97854919d5043a4d98f5cd7b7795a7804bda64dd2cd0b0
 
 name:           playground
 version:        0.0.1
@@ -31,11 +31,18 @@ executable playground
   main-is: Main.hs
   other-modules:
       Paths_playground
+  autogen-modules:
+      Paths_playground
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings LambdaCase ScopedTypeVariables
+  default-extensions:
+      OverloadedStrings
+      LambdaCase
+      ScopedTypeVariables
   ghc-options: -Wall -Weverything -Wno-safe -Wno-unsafe -Wno-implicit-prelude -Wno-missed-specializations -Wno-all-missed-specializations -Wno-missing-import-lists -Wno-type-defaults -Wno-missing-local-signatures -Wno-monomorphism-restriction -Wno-missing-deriving-strategies -Wno-prepositive-qualified-module -Wno-missing-safe-haskell-mode -optP-Wno-nonportable-include-path -fhide-source-paths -fno-show-valid-hole-fits -fno-sort-valid-hole-fits
   cxx-options: -std=c++17 -Wall -D__EMBEDDED_SOUFFLE__
+  cxx-sources:
+      cbits/categorize.cpp
   build-depends:
       base >=4.12 && <5
     , containers >=0.6.2.1 && <1

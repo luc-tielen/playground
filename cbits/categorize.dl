@@ -24,4 +24,5 @@ normalize_issue(pkg, category) :-
 
 normalize_category("web", "web").
 normalize_category("web", "internet").
+normalize_category("web", "blabla").
 

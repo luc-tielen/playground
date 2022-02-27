@@ -239,6 +239,7 @@ public:
 SymbolTable symTable{
 	R"_(web)_",
 	R"_(internet)_",
+	R"_(blabla)_",
 };// -- initialize record table --
 SpecializedRecordTable<0> recordTable{};
 // -- Table: normalize_category
@@ -391,17 +392,24 @@ fatal("unknown subroutine");
 #endif // _MSC_VER
 void subroutine_0(const std::vector<RamDomain>& args, std::vector<RamDomain>& ret) {
 signalHandler->setMsg(R"_(normalize_category("web","web").
-in file /home/luc/personal/souffle-haskell-example/cbits/categorize.dl [25:1-25:34])_");
+in file /home/luc/personal/playground/cbits/categorize.dl [25:1-25:34])_");
 [&](){
 CREATE_OP_CONTEXT(rel_1_normalize_category_op_ctxt,rel_1_normalize_category->createContext());
 Tuple<RamDomain,2> tuple{{ramBitCast(RamSigned(0)),ramBitCast(RamSigned(0))}};
 rel_1_normalize_category->insert(tuple,READ_OP_CONTEXT(rel_1_normalize_category_op_ctxt));
 }
 ();signalHandler->setMsg(R"_(normalize_category("web","internet").
-in file /home/luc/personal/souffle-haskell-example/cbits/categorize.dl [26:1-26:39])_");
+in file /home/luc/personal/playground/cbits/categorize.dl [26:1-26:39])_");
 [&](){
 CREATE_OP_CONTEXT(rel_1_normalize_category_op_ctxt,rel_1_normalize_category->createContext());
 Tuple<RamDomain,2> tuple{{ramBitCast(RamSigned(0)),ramBitCast(RamSigned(1))}};
+rel_1_normalize_category->insert(tuple,READ_OP_CONTEXT(rel_1_normalize_category_op_ctxt));
+}
+();signalHandler->setMsg(R"_(normalize_category("web","blabla").
+in file /home/luc/personal/playground/cbits/categorize.dl [27:1-27:37])_");
+[&](){
+CREATE_OP_CONTEXT(rel_1_normalize_category_op_ctxt,rel_1_normalize_category->createContext());
+Tuple<RamDomain,2> tuple{{ramBitCast(RamSigned(0)),ramBitCast(RamSigned(2))}};
 rel_1_normalize_category->insert(tuple,READ_OP_CONTEXT(rel_1_normalize_category_op_ctxt));
 }
 ();}
@@ -429,11 +437,11 @@ void subroutine_2(const std::vector<RamDomain>& args, std::vector<RamDomain>& re
 signalHandler->setMsg(R"_(normalize_issue(pkg,category) :- 
    user_package_category(pkg,category),
    !normalize_category(_,category).
-in file /home/luc/personal/souffle-haskell-example/cbits/categorize.dl [19:1-21:36])_");
+in file /home/luc/personal/playground/cbits/categorize.dl [19:1-21:36])_");
 if(!(rel_2_user_package_category->empty())) {
 [&](){
-CREATE_OP_CONTEXT(rel_3_normalize_issue_op_ctxt,rel_3_normalize_issue->createContext());
 CREATE_OP_CONTEXT(rel_2_user_package_category_op_ctxt,rel_2_user_package_category->createContext());
+CREATE_OP_CONTEXT(rel_3_normalize_issue_op_ctxt,rel_3_normalize_issue->createContext());
 CREATE_OP_CONTEXT(rel_1_normalize_category_op_ctxt,rel_1_normalize_category->createContext());
 for(const auto& env0 : *rel_2_user_package_category) {
 if( !(!rel_1_normalize_category->lowerUpperRange_01(Tuple<RamDomain,2>{{ramBitCast<RamDomain>(MIN_RAM_SIGNED), ramBitCast(env0[1])}},Tuple<RamDomain,2>{{ramBitCast<RamDomain>(MAX_RAM_SIGNED), ramBitCast(env0[1])}},READ_OP_CONTEXT(rel_1_normalize_category_op_ctxt)).empty())) {
@@ -460,7 +468,7 @@ void subroutine_3(const std::vector<RamDomain>& args, std::vector<RamDomain>& re
 signalHandler->setMsg(R"_(normalized_package_category(pkg,normalized) :- 
    user_package_category(pkg,user_category),
    normalize_category(normalized,user_category).
-in file /home/luc/personal/souffle-haskell-example/cbits/categorize.dl [15:1-17:49])_");
+in file /home/luc/personal/playground/cbits/categorize.dl [15:1-17:49])_");
 if(!(rel_2_user_package_category->empty()) && !(rel_1_normalize_category->empty())) {
 [&](){
 CREATE_OP_CONTEXT(rel_2_user_package_category_op_ctxt,rel_2_user_package_category->createContext());
@@ -508,7 +516,7 @@ factory_Sf_categorize __factory_Sf_categorize_instance;
 int main(int argc, char** argv)
 {
 try{
-souffle::CmdOptions opt(R"(/home/luc/personal/souffle-haskell-example/cbits/categorize.dl)",
+souffle::CmdOptions opt(R"(categorize.dl)",
 R"()",
 R"()",
 false,
