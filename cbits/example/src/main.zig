@@ -37,15 +37,18 @@ export fn init_example() *Example {
     return obj;
 }
 
-export fn deinit_example(obj: *Example) void {
-    std.debug.assert(obj != @intToPtr(*allowzero Example, 0));
+export fn deinit_example(ptr: ?*Example) void {
+    std.debug.assert(ptr != null);
 
+    const obj = ptr.?;
     obj.deinit(); // TODO: rename destroy?
     std.heap.c_allocator.destroy(obj);
 }
 
-export fn do_stuff_example(obj: *Example, arg: i32) bool {
-    std.debug.assert(obj != @intToPtr(*allowzero Example, 0));
+export fn do_stuff_example(ptr: ?*Example, arg: i32) bool {
+    std.debug.assert(ptr != null);
+
+    const obj = ptr.?;
     return obj.do_stuff(arg);
 }
 
