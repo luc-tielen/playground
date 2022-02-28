@@ -10,3 +10,5 @@ result-*
 cbits/*.o
 upload-docs.sh
 *.csv
+*.a
+**/zig-cache/
