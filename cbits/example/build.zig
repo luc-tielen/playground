@@ -8,6 +8,7 @@ pub fn build(b: *std.build.Builder) void {
     const lib = b.addStaticLibrary("example", "src/main.zig");
     lib.setBuildMode(mode);
     lib.linkLibC();
+    lib.bundle_compiler_rt = true;
     lib.install();
 
     const main_tests = b.addTest("src/main.zig");
