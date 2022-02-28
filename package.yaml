@@ -50,11 +50,6 @@ executables:
   playground:
     source-dirs:      src
     main:             Main.hs
-    cxx-sources: cbits/*.cpp
-    cxx-options:
-      - -std=c++17
-      - -Wall
-      - -D__EMBEDDED_SOUFFLE__
-    when:
-      - condition: os(linux)
-        extra-libraries: stdc++
+
+extra-libraries: example
+extra-lib-dirs: cbits/example/zig-out/lib/

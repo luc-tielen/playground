@@ -12,3 +12,4 @@ upload-docs.sh
 *.csv
 *.a
 **/zig-cache/
+**/zig-out/
