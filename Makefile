@@ -1,22 +1,10 @@
-
-# NOTE: these all assume cabal v3
-
 build:
-		@cabal build
+	g++ -O0 src/main.c -o program
 
-configure:
-		@hpack --force && cabal configure --enable-tests
+run: build
+	./program
 
 clean:
-		@cabal clean
+	rm program
 
-lint:
-		@hlint .
-
-hoogle:
-		hoogle server --local -p 8080
-
-docs:
-	@cabal haddock
-
-.PHONY: hoogle lint clean configure build docs
+.PHONY: build run clean
