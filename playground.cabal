@@ -4,7 +4,7 @@ cabal-version: 2.2
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 77b3790be09b094d10fc4a1053b6d98d752d918f2c71b933e1277f34a91f6b83
+-- hash: 94ae07b5afef441276d4a92918a7d47708ceb16a41575154f84ddf8c8e46ec67
 
 name:           playground
 version:        0.0.1
@@ -18,14 +18,24 @@ maintainer:     luc.tielen@gmail.com
 copyright:      2021 Luc Tielen
 license:        MIT
 license-file:   LICENSE
-build-type:     Simple
+build-type:     Custom
 extra-source-files:
     README.md
     LICENSE
+    cbits/path.ll
 
 source-repository head
   type: git
   location: https://github.com/luc-tielen/playground
+
+custom-setup
+  setup-depends:
+      Cabal
+    , base >=4.12 && <5
+    , directory
+    , filepath
+    , process
+    , template-haskell
 
 executable playground
   main-is: Main.hs
@@ -41,6 +51,10 @@ executable playground
       ScopedTypeVariables
   ghc-options: -Wall -Weverything -Wno-safe -Wno-unsafe -Wno-implicit-prelude -Wno-missed-specializations -Wno-all-missed-specializations -Wno-missing-import-lists -Wno-type-defaults -Wno-missing-local-signatures -Wno-monomorphism-restriction -Wno-missing-deriving-strategies -Wno-prepositive-qualified-module -Wno-missing-safe-haskell-mode -optP-Wno-nonportable-include-path -fhide-source-paths -fno-show-valid-hole-fits -fno-sort-valid-hole-fits
   cxx-options: -std=c++17 -Wall -D__EMBEDDED_SOUFFLE__
+  extra-lib-dirs:
+      cbits/
+  extra-libraries:
+      path
   build-depends:
       base >=4.12 && <5
     , containers >=0.6.2.1 && <1

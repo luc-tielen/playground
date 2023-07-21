@@ -12,6 +12,7 @@ github: luc-tielen/playground
 extra-source-files:
   - README.md
   - LICENSE
+  - cbits/path.ll
 
 dependencies:
   - base >= 4.12 && < 5
@@ -21,6 +22,11 @@ dependencies:
   - recursion-schemes
   - eclair-haskell
   - template-haskell
+
+extra-libraries:
+  - path
+extra-lib-dirs:
+  - cbits/
 
 default-extensions:
   - OverloadedStrings
@@ -46,6 +52,15 @@ ghc-options:
   - -fhide-source-paths
   - -fno-show-valid-hole-fits
   - -fno-sort-valid-hole-fits
+
+custom-setup:
+  dependencies:
+    - base >= 4.12 && < 5
+    - Cabal
+    - template-haskell
+    - directory
+    - filepath
+    - process
 
 executables:
   playground:

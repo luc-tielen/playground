@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds, DeriveGeneric, DeriveAnyClass, DerivingVia #-}
-{-# LANGUAGE UndecidableInstances, TemplateHaskell #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE TemplateHaskell #-}  -- TODO rm
 -- UndecidableInstances is only needed for the DerivingVia style API.
 
 module Main ( main ) where
@@ -10,7 +11,8 @@ import GHC.Generics
 import Data.Word
 import Data.Foldable
 
-[] <$ qAddForeignFilePath RawObject "cbits/path.o"
+-- TODO rm
+-- [] <$ qAddForeignFilePath RawObject "cbits/path.o"
 
 data Edge
   = Edge Word32 Word32

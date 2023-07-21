@@ -8,5 +8,6 @@ result
 result-*
 .history
 cbits/*.o
+cbits/*.a
 upload-docs.sh
 *.csv
