@@ -1,10 +1,10 @@
 cabal-version: 2.2
 
--- This file has been generated from package.yaml by hpack version 0.34.2.
+-- This file has been generated from package.yaml by hpack version 0.35.2.
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a3cdfa21468f56fcebf061e1f04621ba811c0a59739622f776b426eb226a4b12
+-- hash: 77b3790be09b094d10fc4a1053b6d98d752d918f2c71b933e1277f34a91f6b83
 
 name:           playground
 version:        0.0.1
@@ -31,20 +31,25 @@ executable playground
   main-is: Main.hs
   other-modules:
       Paths_playground
+  autogen-modules:
+      Paths_playground
   hs-source-dirs:
       src
-  default-extensions: OverloadedStrings LambdaCase ScopedTypeVariables
+  default-extensions:
+      OverloadedStrings
+      LambdaCase
+      ScopedTypeVariables
   ghc-options: -Wall -Weverything -Wno-safe -Wno-unsafe -Wno-implicit-prelude -Wno-missed-specializations -Wno-all-missed-specializations -Wno-missing-import-lists -Wno-type-defaults -Wno-missing-local-signatures -Wno-monomorphism-restriction -Wno-missing-deriving-strategies -Wno-prepositive-qualified-module -Wno-missing-safe-haskell-mode -optP-Wno-nonportable-include-path -fhide-source-paths -fno-show-valid-hole-fits -fno-sort-valid-hole-fits
   cxx-options: -std=c++17 -Wall -D__EMBEDDED_SOUFFLE__
   build-depends:
       base >=4.12 && <5
     , containers >=0.6.2.1 && <1
+    , eclair-haskell
     , mtl >=2.0 && <3
     , recursion-schemes
-    , souffle-dsl
-    , souffle-haskell
-    , text >=1.0 && <2
+    , template-haskell
+    , text
+  default-language: Haskell2010
   if os(linux)
     extra-libraries:
         stdc++
-  default-language: Haskell2010

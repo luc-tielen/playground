@@ -16,11 +16,11 @@ extra-source-files:
 dependencies:
   - base >= 4.12 && < 5
   - mtl >= 2.0 && < 3
-  - text >= 1.0 && < 2
+  - text
   - containers >= 0.6.2.1 && < 1
   - recursion-schemes
-  - souffle-haskell
-  - souffle-dsl
+  - eclair-haskell
+  - template-haskell
 
 default-extensions:
   - OverloadedStrings
@@ -49,8 +49,8 @@ ghc-options:
 
 executables:
   playground:
-    source-dirs:      src
-    main:             Main.hs
+    source-dirs: src
+    main: Main.hs
     cxx-sources: cbits/*.cpp
     cxx-options:
       - -std=c++17
